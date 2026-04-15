@@ -1,0 +1,790 @@
+
+<!DOCTYPE html>
+<html lang="en" class="antialiased">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RepoFlow v3 | Minimalist GitHub Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        :root {
+            --bg-base: #f8fafc;
+            --bg-panel: #ffffff;
+            --border-color: #e2e8f0;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+        }
+
+        .dark {
+            --bg-base: #020617;
+            --bg-panel: #0f172a;
+            --border-color: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            overflow: hidden; /* Prevent body scroll */
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        code, pre, textarea { font-family: 'JetBrains Mono', monospace; }
+
+        /* Smooth UI Transitions */
+        .panel {
+            background-color: var(--bg-panel);
+            border-color: var(--border-color);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #334155; }
+
+        /* Animations */
+        .fade-in { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Hide elements gracefully */
+        .hidden-safe { display: none !important; }
+
+        /* File Item Hover Effects */
+        .file-item .actions { opacity: 0; transition: opacity 0.2s; }
+        .file-item:hover .actions { opacity: 1; }
+        @media (max-width: 768px) { .file-item .actions { opacity: 1; } }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col selection:bg-blue-500/30 text-sm">
+
+    <div id="loader" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm transition-opacity duration-300">
+        <i data-lucide="loader-2" class="w-10 h-10 animate-spin text-blue-600 mb-4"></i>
+        <span class="font-medium text-slate-600 dark:text-slate-300 tracking-wide animate-pulse">Initializing Workspace...</span>
+    </div>
+
+    <div id="auth-screen" class="hidden-safe fixed inset-0 z-50 flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
+        <div class="panel w-full max-w-sm rounded-2xl border shadow-xl p-8 fade-in text-center">
+            <div class="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-500/20">
+                <i data-lucide="github" class="w-8 h-8 text-white"></i>
+            </div>
+            <h1 class="text-2xl font-bold mb-2">RepoFlow</h1>
+            <p class="text-slate-500 dark:text-slate-400 mb-8">Secure GitHub Management Suite</p>
+            
+            <input type="password" id="auth-token" placeholder="Paste GitHub Token (ghp_...)" class="w-full px-4 py-3 rounded-lg border panel focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all mb-4 font-mono text-center">
+            
+            <button onclick="App.login()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors shadow-sm mb-4">
+                Connect Workspace
+            </button>
+            <a href="https://github.com/settings/tokens/new?scopes=repo,delete_repo" target="_blank" class="text-xs text-slate-400 hover:text-blue-500 flex items-center justify-center gap-1">
+                Generate Token <i data-lucide="external-link" class="w-3 h-3"></i>
+            </a>
+        </div>
+    </div>
+
+    <div id="app-screen" class="hidden-safe flex h-full w-full">
+        
+        <aside id="sidebar" class="w-72 panel border-r flex flex-col shrink-0 absolute md:relative z-40 h-full transform -translate-x-full md:translate-x-0 transition-transform duration-300">
+            <div class="h-14 border-b panel flex items-center justify-between px-4 shrink-0">
+                <div class="flex items-center gap-2 font-bold text-base">
+                    <i data-lucide="box" class="w-5 h-5 text-blue-600"></i> RepoFlow
+                </div>
+                <div class="flex gap-1">
+                    <button onclick="UI.toggleTheme()" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
+                        <i data-lucide="sun-moon" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="UI.toggleSidebar()" class="md:hidden p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-3 border-b panel shrink-0">
+                <div class="relative">
+                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input type="text" id="repo-search" oninput="App.filterRepos()" placeholder="Find repository..." class="w-full pl-9 pr-3 py-2 rounded-md bg-slate-100 dark:bg-slate-900 border-transparent focus:bg-white dark:focus:bg-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all text-xs">
+                </div>
+            </div>
+
+            <div id="repo-list" class="flex-1 overflow-y-auto p-2 space-y-0.5">
+                </div>
+
+            <div class="p-3 border-t panel flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity" onclick="UI.switchView('settings')">
+                    <img id="user-avatar" src="" class="w-8 h-8 rounded-full bg-slate-200 shrink-0">
+                    <div class="truncate">
+                        <div id="user-name" class="font-semibold text-xs truncate">User</div>
+                        <div class="text-[10px] text-slate-500">Settings</div>
+                    </div>
+                </div>
+                <button onclick="App.logout()" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors" title="Sign Out">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </aside>
+
+        <div id="sidebar-overlay" onclick="UI.toggleSidebar()" class="hidden-safe fixed inset-0 bg-black/50 z-30 md:hidden"></div>
+
+        <main class="flex-1 flex flex-col min-w-0 bg-slate-50 dark:bg-slate-900/50">
+            
+            <header class="h-14 panel border-b flex items-center px-4 justify-between shrink-0">
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <button onclick="UI.toggleSidebar()" class="md:hidden p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
+                        <i data-lucide="menu" class="w-5 h-5"></i>
+                    </button>
+                    <div id="breadcrumbs" class="flex items-center text-xs font-mono text-slate-500 truncate">
+                        <span class="text-slate-400 italic">Select a repository to begin</span>
+                    </div>
+                </div>
+
+                <div id="toolbar" class="flex items-center gap-2 hidden-safe shrink-0 ml-4">
+                    <span id="branch-badge" class="hidden sm:flex items-center gap-1 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-medium border panel cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" onclick="App.switchBranch()" title="Change Branch">
+                        <i data-lucide="git-branch" class="w-3 h-3"></i> <span id="branch-name">main</span>
+                    </span>
+                    <div class="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block"></div>
+                    <button onclick="document.getElementById('file-upload').click()" class="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Upload File">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="UI.openModal('create-modal')" class="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="New File/Folder">
+                        <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="App.refreshExplorer()" class="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Refresh">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    </button>
+                    <input type="file" id="file-upload" class="hidden" multiple onchange="App.handleUpload(event, false)">
+                </div>
+            </header>
+
+            <div id="views-container" class="flex-1 overflow-hidden relative">
+                
+                <div id="view-welcome" class="absolute inset-0 flex flex-col items-center justify-center fade-in p-6 text-center">
+                    <div class="w-20 h-20 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mb-6 text-slate-400">
+                        <i data-lucide="layout-dashboard" class="w-10 h-10"></i>
+                    </div>
+                    <h2 class="text-xl font-bold mb-2">Workspace Ready</h2>
+                    <p class="text-slate-500 text-sm max-w-sm">Select a repository from the sidebar to start exploring files and editing code.</p>
+                </div>
+
+                <div id="view-explorer" class="hidden-safe absolute inset-0 overflow-y-auto p-4 md:p-6 fade-in">
+                    <div class="panel border rounded-xl overflow-hidden shadow-sm">
+                        <div class="grid grid-cols-12 gap-4 p-3 border-b bg-slate-50 dark:bg-slate-900/50 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                            <div class="col-span-8 md:col-span-6 pl-2">Name</div>
+                            <div class="hidden md:block col-span-3 text-right">Size</div>
+                            <div class="col-span-4 md:col-span-3 text-right pr-2">Actions</div>
+                        </div>
+                        <div id="file-list" class="divide-y divide-slate-100 dark:divide-slate-800/50 min-h-[100px]">
+                            </div>
+                    </div>
+                </div>
+
+                <div id="view-editor" class="hidden-safe absolute inset-0 flex flex-col fade-in bg-white dark:bg-slate-950">
+                    <div class="h-12 border-b flex items-center justify-between px-4 bg-slate-50 dark:bg-slate-900 shrink-0">
+                        <div class="flex items-center gap-2 text-sm font-medium">
+                            <button onclick="UI.switchView('explorer')" class="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded mr-1"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+                            <i data-lucide="file-code" class="w-4 h-4 text-blue-500"></i>
+                            <span id="editor-filename">file.js</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="App.saveFile()" class="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded shadow-sm transition-colors">
+                                <i data-lucide="save" class="w-3 h-3"></i> Save
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="code-editor" class="flex-1 w-full p-4 bg-transparent outline-none resize-none leading-relaxed text-sm whitespace-pre" spellcheck="false"></textarea>
+                </div>
+
+                <div id="view-preview" class="hidden-safe absolute inset-0 flex flex-col fade-in bg-white dark:bg-slate-950">
+                    <div class="h-12 border-b flex items-center justify-between px-4 bg-slate-50 dark:bg-slate-900 shrink-0">
+                        <div class="flex items-center gap-2 text-sm font-medium">
+                            <button onclick="UI.switchView('explorer')" class="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded mr-1"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+                            <i data-lucide="eye" class="w-4 h-4 text-purple-500"></i>
+                            <span id="preview-filename">Preview</span>
+                        </div>
+                        <button id="btn-edit-preview" class="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-xs font-semibold rounded transition-colors">Edit Source</button>
+                    </div>
+                    <div id="preview-content" class="flex-1 overflow-y-auto p-6 md:p-10 prose prose-sm sm:prose-base dark:prose-invert max-w-4xl mx-auto w-full"></div>
+                </div>
+
+                <div id="view-settings" class="hidden-safe absolute inset-0 overflow-y-auto p-4 md:p-8 fade-in">
+                    <div class="max-w-2xl mx-auto space-y-6">
+                        <div class="flex items-center gap-4 mb-8">
+                            <button onclick="UI.switchView('explorer')" class="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>
+                            <h2 class="text-2xl font-bold">Preferences</h2>
+                        </div>
+
+                        <div class="panel border rounded-xl p-6">
+                            <h3 class="font-semibold mb-4 text-base flex items-center gap-2"><i data-lucide="key" class="w-4 h-4 text-blue-500"></i> Access Token</h3>
+                            <div class="flex gap-2">
+                                <input type="password" id="settings-token" class="flex-1 px-3 py-2 border rounded-md panel font-mono text-sm outline-none focus:border-blue-500">
+                                <button onclick="App.updateToken()" class="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-md hover:bg-blue-700 transition-colors">Update</button>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-2">Update your GitHub Personal Access Token. Stored securely in your browser's local storage.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <div id="modal-backdrop" class="hidden-safe fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        
+        <div id="create-modal" class="hidden-safe panel w-full max-w-sm rounded-xl border shadow-2xl p-6 fade-in">
+            <h3 class="font-bold text-lg mb-4">Create New Item</h3>
+            <div class="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg mb-4">
+                <button onclick="UI.setCreateType('file')" id="tab-file" class="flex-1 py-1.5 text-xs font-semibold rounded bg-white dark:bg-slate-600 shadow-sm transition-all">File</button>
+                <button onclick="UI.setCreateType('folder')" id="tab-folder" class="flex-1 py-1.5 text-xs font-semibold rounded text-slate-500 transition-all">Folder</button>
+            </div>
+            <input type="text" id="create-input" placeholder="filename.js" class="w-full px-3 py-2 border rounded-md panel text-sm outline-none focus:border-blue-500 font-mono mb-6">
+            <div class="flex justify-end gap-2">
+                <button onclick="UI.closeModal()" class="px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">Cancel</button>
+                <button onclick="App.createItem()" class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700">Confirm</button>
+            </div>
+        </div>
+
+        <div id="delete-modal" class="hidden-safe panel w-full max-w-sm rounded-xl border shadow-2xl p-6 fade-in text-center">
+            <div class="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 mx-auto flex items-center justify-center mb-4">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <h3 class="font-bold text-lg mb-2">Delete File?</h3>
+            <p class="text-sm text-slate-500 mb-6">Are you sure you want to delete <span id="del-filename" class="font-mono text-red-500"></span>? This cannot be undone.</p>
+            <div class="flex justify-center gap-2">
+                <button onclick="UI.closeModal()" class="px-4 py-2 text-sm font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md">Cancel</button>
+                <button id="btn-confirm-delete" class="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700">Delete Permanently</button>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="toast-container" class="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        /**
+         * REPOFLOW v3 - Core Logic
+         * Architected for stability and modularity.
+         */
+
+        // --- STATE MANAGEMENT ---
+        const State = {
+            token: localStorage.getItem('rf_v3_token') || '',
+            user: null,
+            repos: [],
+            currentRepo: null, // { owner: '', name: '' }
+            currentBranch: 'main',
+            currentPath: '',
+            files: [],
+            activeFile: null, // For editor { path, sha, name }
+            createType: 'file' // 'file' | 'folder'
+        };
+
+        // --- UTILITIES ---
+        const Utils = {
+            formatSize: (bytes) => {
+                if (!bytes) return '--';
+                const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + ['B', 'KB', 'MB', 'GB'][i];
+            },
+            decodeB64: (str) => {
+                try { return decodeURIComponent(atob(str.replace(/\s/g, '')).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')); }
+                catch (e) { return atob(str); }
+            },
+            encodeB64: (str) => btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (m, p1) => String.fromCharCode('0x' + p1))),
+            getFileExt: (name) => name.split('.').pop().toLowerCase()
+        };
+
+        // --- UI CONTROLLER ---
+        const UI = {
+            init: () => {
+                lucide.createIcons();
+                if(localStorage.getItem('rf_theme') === 'dark') document.documentElement.classList.add('dark');
+                document.getElementById('loader').classList.add('hidden-safe');
+            },
+            toggleTheme: () => {
+                const isDark = document.documentElement.classList.toggle('dark');
+                localStorage.setItem('rf_theme', isDark ? 'dark' : 'light');
+            },
+            toggleSidebar: () => {
+                const s = document.getElementById('sidebar');
+                const o = document.getElementById('sidebar-overlay');
+                const isClosed = s.classList.contains('-translate-x-full');
+                if (isClosed) {
+                    s.classList.remove('-translate-x-full');
+                    o.classList.remove('hidden-safe');
+                } else {
+                    s.classList.add('-translate-x-full');
+                    o.classList.add('hidden-safe');
+                }
+            },
+            switchView: (viewName) => {
+                const views = ['welcome', 'explorer', 'editor', 'preview', 'settings'];
+                views.forEach(v => {
+                    const el = document.getElementById(`view-${v}`);
+                    if(el) el.classList.toggle('hidden-safe', v !== viewName);
+                });
+                
+                // Show/Hide Toolbar based on view
+                const toolbar = document.getElementById('toolbar');
+                if (['explorer', 'editor', 'preview'].includes(viewName)) {
+                    toolbar.classList.remove('hidden-safe');
+                } else {
+                    toolbar.classList.add('hidden-safe');
+                }
+
+                if (window.innerWidth < 768 && !document.getElementById('sidebar').classList.contains('-translate-x-full')) {
+                    UI.toggleSidebar();
+                }
+            },
+            toast: (msg, type = 'info') => {
+                const container = document.getElementById('toast-container');
+                const el = document.createElement('div');
+                const bg = type === 'error' ? 'bg-red-500' : (type === 'success' ? 'bg-emerald-500' : 'bg-slate-800');
+                const icon = type === 'error' ? 'alert-circle' : (type === 'success' ? 'check-circle-2' : 'info');
+                
+                el.className = `${bg} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 text-sm font-medium fade-in transition-all duration-300 transform translate-y-0 opacity-100 pointer-events-auto border border-white/10`;
+                el.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4"></i> ${msg}`;
+                
+                container.appendChild(el);
+                lucide.createIcons({ root: el });
+                
+                setTimeout(() => {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(10px)';
+                    setTimeout(() => el.remove(), 300);
+                }, 3000);
+            },
+            openModal: (id) => {
+                document.getElementById('modal-backdrop').classList.remove('hidden-safe');
+                ['create-modal', 'delete-modal'].forEach(m => document.getElementById(m).classList.add('hidden-safe'));
+                document.getElementById(id).classList.remove('hidden-safe');
+                if(id === 'create-modal') {
+                    document.getElementById('create-input').value = '';
+                    document.getElementById('create-input').focus();
+                }
+            },
+            closeModal: () => {
+                document.getElementById('modal-backdrop').classList.add('hidden-safe');
+            },
+            setCreateType: (type) => {
+                State.createType = type;
+                const active = "flex-1 py-1.5 text-xs font-semibold rounded bg-white dark:bg-slate-600 shadow-sm transition-all";
+                const inactive = "flex-1 py-1.5 text-xs font-semibold rounded text-slate-500 transition-all hover:text-slate-800 dark:hover:text-slate-200";
+                
+                document.getElementById('tab-file').className = type === 'file' ? active : inactive;
+                document.getElementById('tab-folder').className = type === 'folder' ? active : inactive;
+                document.getElementById('create-input').placeholder = type === 'file' ? 'filename.js' : 'folder_name';
+            },
+            updateBreadcrumbs: () => {
+                const bc = document.getElementById('breadcrumbs');
+                if (!State.currentRepo) return;
+                
+                let html = `<span class="cursor-pointer hover:text-blue-500 transition-colors" onclick="App.loadPath('')">${State.currentRepo.name}</span>`;
+                if (State.currentPath) {
+                    const parts = State.currentPath.split('/');
+                    let accPath = '';
+                    parts.forEach((part, idx) => {
+                        accPath += (idx === 0 ? '' : '/') + part;
+                        html += ` <span class="mx-1 opacity-50">/</span> <span class="cursor-pointer hover:text-blue-500 transition-colors truncate" onclick="App.loadPath('${accPath}')">${part}</span>`;
+                    });
+                }
+                bc.innerHTML = html;
+            }
+        };
+
+        // --- API CONTROLLER ---
+        const API = {
+            call: async (endpoint, method = 'GET', body = null) => {
+                try {
+                    const res = await fetch(`https://api.github.com/${endpoint}`, {
+                        method,
+                        headers: {
+                            'Authorization': `Bearer ${State.token}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: body ? JSON.stringify(body) : null
+                    });
+                    
+                    if (res.status === 204) return true; // No content (e.g., delete)
+                    
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
+                    return data;
+                } catch (error) {
+                    throw error;
+                }
+            }
+        };
+
+        // --- APP LOGIC ---
+        const App = {
+            start: () => {
+                UI.init();
+                if (State.token) {
+                    App.validateToken();
+                } else {
+                    document.getElementById('auth-screen').classList.remove('hidden-safe');
+                }
+            },
+            login: async () => {
+                const token = document.getElementById('auth-token').value.trim();
+                if (!token) return UI.toast('Please enter a token', 'error');
+                
+                State.token = token;
+                await App.validateToken();
+            },
+            logout: () => {
+                localStorage.removeItem('rf_v3_token');
+                location.reload();
+            },
+            validateToken: async () => {
+                try {
+                    const user = await API.call('user');
+                    State.user = user;
+                    localStorage.setItem('rf_v3_token', State.token);
+                    
+                    // Setup UI
+                    document.getElementById('user-name').innerText = user.login;
+                    document.getElementById('user-avatar').src = user.avatar_url;
+                    document.getElementById('settings-token').value = State.token;
+                    
+                    document.getElementById('auth-screen').classList.add('hidden-safe');
+                    document.getElementById('app-screen').classList.remove('hidden-safe');
+                    
+                    UI.toast(`Welcome back, ${user.login}!`, 'success');
+                    App.fetchRepos();
+                } catch (e) {
+                    State.token = '';
+                    localStorage.removeItem('rf_v3_token');
+                    document.getElementById('auth-screen').classList.remove('hidden-safe');
+                    UI.toast('Invalid Token. Please try again.', 'error');
+                }
+            },
+            updateToken: async () => {
+                const newToken = document.getElementById('settings-token').value.trim();
+                if(newToken) {
+                    State.token = newToken;
+                    await App.validateToken();
+                }
+            },
+            
+            // Repositories
+            fetchRepos: async () => {
+                document.getElementById('repo-list').innerHTML = `<div class="p-4 text-center text-xs text-slate-500 animate-pulse">Loading repositories...</div>`;
+                try {
+                    State.repos = await API.call('user/repos?sort=updated&per_page=100');
+                    App.renderRepos();
+                } catch (e) {
+                    UI.toast(e.message, 'error');
+                }
+            },
+            filterRepos: () => App.renderRepos(document.getElementById('repo-search').value),
+            renderRepos: (query = '') => {
+                const list = document.getElementById('repo-list');
+                const filtered = State.repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()));
+                
+                if (filtered.length === 0) {
+                    list.innerHTML = `<div class="p-4 text-center text-xs text-slate-500">No repos found.</div>`;
+                    return;
+                }
+
+                list.innerHTML = filtered.map(r => {
+                    const isActive = State.currentRepo?.name === r.name;
+                    return `
+                    <button onclick="App.selectRepo('${r.owner.login}', '${r.name}', '${r.default_branch}')" 
+                        class="w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 transition-colors ${isActive ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'hover:bg-slate-100 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300'}">
+                        <i data-lucide="${r.private ? 'lock' : 'book-marked'}" class="w-4 h-4 opacity-70 shrink-0"></i>
+                        <span class="text-sm font-medium truncate">${r.name}</span>
+                    </button>
+                `}).join('');
+                lucide.createIcons();
+            },
+            selectRepo: (owner, name, branch) => {
+                State.currentRepo = { owner, name };
+                State.currentBranch = branch || 'main';
+                document.getElementById('branch-name').innerText = State.currentBranch;
+                App.renderRepos(); // Update active state
+                App.loadPath(''); // Load root
+            },
+            switchBranch: () => {
+                const newBranch = prompt("Enter branch name:", State.currentBranch);
+                if (newBranch && newBranch.trim() !== State.currentBranch) {
+                    State.currentBranch = newBranch.trim();
+                    document.getElementById('branch-name').innerText = State.currentBranch;
+                    App.loadPath('');
+                    UI.toast(`Switched to branch: ${State.currentBranch}`, 'success');
+                }
+            },
+
+            // Explorer
+            loadPath: async (path) => {
+                State.currentPath = path;
+                UI.updateBreadcrumbs();
+                UI.switchView('explorer');
+                
+                const list = document.getElementById('file-list');
+                list.innerHTML = `
+                    <div class="py-12 flex flex-col items-center justify-center text-slate-400">
+                        <i data-lucide="loader-2" class="w-6 h-6 animate-spin mb-2"></i>
+                        <span class="text-xs font-medium">Scanning directory...</span>
+                    </div>`;
+                lucide.createIcons();
+
+                try {
+                    const data = await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${path}?ref=${State.currentBranch}`);
+                    State.files = Array.isArray(data) ? data : [data];
+                    
+                    // Sort: Folders first, then alphabetical
+                    State.files.sort((a, b) => {
+                        if (a.type === 'dir' && b.type !== 'dir') return -1;
+                        if (a.type !== 'dir' && b.type === 'dir') return 1;
+                        return a.name.localeCompare(b.name);
+                    });
+                    
+                    App.renderFiles();
+                } catch (e) {
+                    if (e.message.includes('404')) {
+                        list.innerHTML = `<div class="py-12 text-center text-slate-500 text-sm">This directory is empty.</div>`;
+                    } else {
+                        UI.toast(e.message, 'error');
+                        list.innerHTML = `<div class="py-12 text-center text-red-500 text-sm">Failed to load content.</div>`;
+                    }
+                }
+            },
+            refreshExplorer: () => App.loadPath(State.currentPath),
+            renderFiles: () => {
+                const list = document.getElementById('file-list');
+                if (State.files.length === 0) {
+                    list.innerHTML = `<div class="py-12 text-center text-slate-500 text-sm">Directory is empty.</div>`;
+                    return;
+                }
+
+                list.innerHTML = State.files.map(item => {
+                    const isDir = item.type === 'dir';
+                    const ext = Utils.getFileExt(item.name);
+                    const isImg = ['png','jpg','jpeg','svg','gif','webp'].includes(ext);
+                    
+                    let icon = isDir ? 'folder' : (isImg ? 'image' : 'file-text');
+                    let iconColor = isDir ? 'text-blue-500' : 'text-slate-400';
+                    let clickAction = isDir ? `App.loadPath('${item.path}')` : `App.openFile('${item.path}', '${item.name}', '${item.sha}')`;
+
+                    return `
+                    <div class="file-item grid grid-cols-12 gap-4 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 items-center transition-colors border-l-2 border-transparent hover:border-blue-500">
+                        <div class="col-span-8 md:col-span-6 flex items-center gap-3 cursor-pointer pl-2" onclick="${clickAction}">
+                            <i data-lucide="${icon}" class="w-5 h-5 ${iconColor} shrink-0 fill-current opacity-20"></i>
+                            <span class="text-sm font-medium truncate">${item.name}</span>
+                        </div>
+                        <div class="hidden md:block col-span-3 text-right text-xs text-slate-400 font-mono">
+                            ${isDir ? '--' : Utils.formatSize(item.size)}
+                        </div>
+                        <div class="col-span-4 md:col-span-3 flex justify-end gap-1 pr-2 actions">
+                            <button onclick="App.renameItem('${item.path}', '${item.name}')" class="p-1.5 text-slate-400 hover:text-blue-500 rounded transition-colors" title="Rename"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                            <button onclick="App.confirmDelete('${item.path}', '${item.name}', '${item.sha}')" class="p-1.5 text-slate-400 hover:text-red-500 rounded transition-colors" title="Delete"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            ${!isDir ? `<a href="${item.download_url}" target="_blank" class="p-1.5 text-slate-400 hover:text-emerald-500 rounded transition-colors"><i data-lucide="external-link" class="w-4 h-4"></i></a>` : ''}
+                        </div>
+                    </div>
+                    `;
+                }).join('');
+                lucide.createIcons();
+            },
+
+            // File Handling
+            openFile: async (path, name, sha) => {
+                const ext = Utils.getFileExt(name);
+                const isMD = ext === 'md';
+                const isImg = ['png','jpg','jpeg','svg','gif','webp','ico'].includes(ext);
+
+                if (isMD || isImg) {
+                    App.openPreview(path, name, isMD, ext);
+                } else {
+                    App.openEditor(path, name, sha);
+                }
+            },
+            openEditor: async (path, name, sha) => {
+                UI.switchView('editor');
+                document.getElementById('editor-filename').innerText = name;
+                const field = document.getElementById('code-editor');
+                field.value = "// Loading content...";
+                field.disabled = true;
+
+                try {
+                    const data = await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${path}?ref=${State.currentBranch}`);
+                    field.value = Utils.decodeB64(data.content);
+                    field.disabled = false;
+                    State.activeFile = { path, name, sha };
+                } catch (e) {
+                    UI.toast("Failed to load file content", "error");
+                    UI.switchView('explorer');
+                }
+            },
+            saveFile: async () => {
+                if (!State.activeFile) return;
+                const content = document.getElementById('code-editor').value;
+                UI.toast("Saving file...", "info");
+                
+                try {
+                    await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${State.activeFile.path}`, 'PUT', {
+                        message: `Update ${State.activeFile.name}`,
+                        content: Utils.encodeB64(content),
+                        sha: State.activeFile.sha,
+                        branch: State.currentBranch
+                    });
+                    UI.toast("File saved successfully", "success");
+                    App.loadPath(State.currentPath); // Refresh behind the scenes
+                } catch (e) {
+                    UI.toast("Failed to save: " + e.message, "error");
+                }
+            },
+            openPreview: async (path, name, isMD, ext) => {
+                UI.switchView('preview');
+                document.getElementById('preview-filename').innerText = name;
+                const container = document.getElementById('preview-content');
+                container.innerHTML = `<div class="animate-pulse text-slate-400">Rendering...</div>`;
+
+                try {
+                    const data = await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${path}?ref=${State.currentBranch}`);
+                    
+                    if (isMD) {
+                        container.innerHTML = marked.parse(Utils.decodeB64(data.content));
+                    } else {
+                        const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+                        const b64 = data.content.replace(/\n/g, '');
+                        container.innerHTML = `<img src="data:${mime};base64,${b64}" class="max-w-full rounded-lg shadow-md border dark:border-slate-800">`;
+                    }
+
+                    // Setup Edit Button
+                    document.getElementById('btn-edit-preview').onclick = () => App.openEditor(path, name, data.sha);
+                } catch (e) {
+                    UI.toast("Preview failed", "error");
+                    UI.switchView('explorer');
+                }
+            },
+
+            // File System Operations
+            createItem: async () => {
+                const name = document.getElementById('create-input').value.trim();
+                if (!name) return UI.toast("Name cannot be empty", "error");
+                
+                const isFolder = State.createType === 'folder';
+                const cleanName = name.replace(/\/$/, "");
+                const fullPath = (State.currentPath ? `${State.currentPath}/${cleanName}` : cleanName) + (isFolder ? '/.gitkeep' : '');
+                
+                UI.closeModal();
+                UI.toast(`Creating ${cleanName}...`, 'info');
+
+                try {
+                    await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${fullPath}`, 'PUT', {
+                        message: `Create ${cleanName}`,
+                        content: btoa(isFolder ? 'Created by RepoFlow' : ''),
+                        branch: State.currentBranch
+                    });
+                    UI.toast("Created successfully", "success");
+                    App.refreshExplorer();
+                } catch (e) {
+                    UI.toast("Creation failed: " + e.message, "error");
+                }
+            },
+            confirmDelete: (path, name, sha) => {
+                State.activeFile = { path, name, sha }; // Reuse activeFile obj to store target
+                document.getElementById('del-filename').innerText = name;
+                UI.openModal('delete-modal');
+                document.getElementById('btn-confirm-delete').onclick = App.executeDelete;
+            },
+            executeDelete: async () => {
+                const { path, name, sha } = State.activeFile;
+                UI.closeModal();
+                UI.toast(`Deleting ${name}...`, 'info');
+                
+                try {
+                    await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${path}`, 'DELETE', {
+                        message: `Delete ${name}`,
+                        sha,
+                        branch: State.currentBranch
+                    });
+                    UI.toast("Deleted successfully", "success");
+                    App.refreshExplorer();
+                } catch (e) {
+                    UI.toast("Delete failed: " + e.message, "error");
+                }
+            },
+            renameItem: async (path, name) => {
+                const newName = prompt("Rename to:", name);
+                if (!newName || newName === name) return;
+
+                const parentPath = path.split('/').slice(0, -1).join('/');
+                const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+
+                UI.toast("Renaming process started...", "info");
+                try {
+                    // GitHub API requires creating new file and deleting old one
+                    const data = await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${path}?ref=${State.currentBranch}`);
+                    
+                    // If it's a file
+                    if (!Array.isArray(data)) {
+                        await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${newPath}`, 'PUT', {
+                            message: `Rename ${name} to ${newName}`,
+                            content: data.content,
+                            branch: State.currentBranch
+                        });
+                        await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${path}`, 'DELETE', {
+                            message: `Clean up old file`,
+                            sha: data.sha,
+                            branch: State.currentBranch
+                        });
+                    } else {
+                        UI.toast("Directory rename is complex and currently unsupported.", "error");
+                        return;
+                    }
+                    UI.toast("Renamed successfully", "success");
+                    App.refreshExplorer();
+                } catch (e) {
+                    UI.toast("Rename failed: " + e.message, "error");
+                }
+            },
+            handleUpload: async (event) => {
+                const files = event.target.files;
+                if (!files || files.length === 0) return;
+                
+                UI.toast(`Uploading ${files.length} file(s)...`, "info");
+                
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const reader = new FileReader();
+                    
+                    reader.onload = async (e) => {
+                        const content = e.target.result.split(',')[1];
+                        const fullPath = State.currentPath ? `${State.currentPath}/${file.name}` : file.name;
+
+                        try {
+                            await API.call(`repos/${State.currentRepo.owner}/${State.currentRepo.name}/contents/${fullPath}`, 'PUT', {
+                                message: `Upload ${file.name}`,
+                                content: content,
+                                branch: State.currentBranch
+                            });
+                            UI.toast(`${file.name} uploaded`, "success");
+                            App.refreshExplorer();
+                        } catch (err) {
+                            UI.toast(`Failed to upload ${file.name}`, "error");
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                }
+                event.target.value = ''; // Reset input
+            }
+        };
+
+        // Initialize App on load
+        window.addEventListener('DOMContentLoaded', App.start);
+
+    </script>
+</body>
+</html>
